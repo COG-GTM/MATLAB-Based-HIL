@@ -1,0 +1,13 @@
+{
+  "packets_sent": 120,
+  "packets_echoed": 120,
+  "packets_superseded_by_newer": 0,
+  "bad_frames": 0,
+  "float_mismatches": 0,
+  "rtt_ms_min": 28.04126000000906,
+  "rtt_ms_mean": 38.275211166665926,
+  "rtt_ms_max": 48.57317599999078,
+  "baud": 115200,
+  "period_ms": 50,
+  "frame_bytes": 14
+}
