@@ -6,6 +6,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=hil/out; BUILD=hil/build; mkdir -p "$OUT" "$BUILD"
 PORT=/tmp/simavr-uart0
+BRIDGE_PID=
+cleanup() { if [ -n "$BRIDGE_PID" ]; then kill "$BRIDGE_PID" 2>/dev/null || true; wait "$BRIDGE_PID" 2>/dev/null || true; fi; rm -f "$PORT"; BRIDGE_PID=; }
+trap cleanup EXIT INT TERM
+rm -f "$OUT"/*.json "$OUT"/size_*.txt
 
 gcc -O2 -I/usr/include/simavr -I/usr/include/simavr/avr -o "$BUILD/simavr_uart_bridge" \
     hil/simavr_uart_bridge.c -lsimavrparts -lsimavr -lelf -lpthread -lutil
@@ -16,15 +20,15 @@ build() { # <sketch dir> <name>
 
 run() { # <name> <args...>
   local elf; elf=$(ls "$BUILD/$1"/*.ino.elf); shift
-  "$BUILD/simavr_uart_bridge" "$elf" >/dev/null 2>&1 & local pid=$!
+  "$BUILD/simavr_uart_bridge" "$elf" >/dev/null 2>&1 & BRIDGE_PID=$!
   for _ in $(seq 50); do [ -e "$PORT" ] && break; sleep 0.1; done; sleep 0.5
   python3 hil/simulink_standin.py --port "$PORT" "$@"
-  kill $pid; wait $pid 2>/dev/null || true; rm -f "$PORT"
+  cleanup
 }
 
 probe_single() { # single_float_send_receive with an idle host: what does the target emit?
   local elf; elf=$(ls "$BUILD/single"/*.ino.elf)
-  "$BUILD/simavr_uart_bridge" "$elf" >/dev/null 2>&1 & local pid=$!
+  "$BUILD/simavr_uart_bridge" "$elf" >/dev/null 2>&1 & BRIDGE_PID=$!
   for _ in $(seq 50); do [ -e "$PORT" ] && break; sleep 0.1; done; sleep 0.5
   python3 - "$PORT" "$OUT/single_idle.json" <<'PY'
 import json, math, serial, struct, sys, time
@@ -34,7 +38,7 @@ nan = sum(math.isnan(x) for x in fr)
 json.dump({"frames": len(fr), "nan": nan, "first_bytes": d[:12].hex()}, open(sys.argv[2], "w"))
 print(f"[single_float idle] frames={len(fr)} NaN={nan} raw={d[:12].hex()}")
 PY
-  kill $pid; wait $pid 2>/dev/null || true; rm -f "$PORT"
+  cleanup
 }
 
 build single_float_send_receive single

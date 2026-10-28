@@ -101,13 +101,21 @@ def main():
     rtt = {k: (first_seen[k] - tx[k][0]) * 1000 for k in first_seen}
     lost = [k for k in tx if k not in first_seen]
     fault_ks = {k for k, (_, f) in tx.items() if f}
-    # two host packets inside one 50 ms target loop: the older is overwritten (rate mismatch, not a fault)
-    def superseded(k):
-        return not any(0 < k - f <= 3 for f in fault_ks)
-
+    # Loss attribution between consecutive echoed packets p < n. Host and target run free 50 ms loops, so the
+    # RTT ramps with clock drift and wraps back to the transport floor. Near the wrap two host packets can land in
+    # one target loop and the older is overwritten: "superseded", not a fault. Any other non-fault loss is collateral.
     lost_fault = [k for k in lost if k in fault_ks]
-    lost_superseded = [k for k in lost if k not in fault_ks and superseded(k)]
-    lost_collateral = [k for k in lost if k not in fault_ks and k not in lost_superseded]
+    lost_superseded, lost_collateral = [], []
+    seen = sorted(first_seen)
+    floor = min(rtt.values()) if rtt else 0
+    for i, (p, n) in enumerate(zip(seen, seen[1:])):
+        others = [k for k in range(p + 1, n) if k not in fault_ks]
+        if not others:
+            continue
+        before = [rtt[q] for q in seen[max(0, i - 3):i + 1] if rtt[q] <= PERIOD * 1000 + 10]
+        wrapped = bool(before) and min(before) - rtt[n] > PERIOD * 1000 / 2
+        at_wrap = rtt[n] <= floor + 3
+        (lost_superseded if wrapped or at_wrap else lost_collateral).extend(others)
     fault_rows = []
     for k, (t_tx, f) in tx.items():
         if not f:
