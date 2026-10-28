@@ -48,28 +48,32 @@ void loop(){
 }
 
 
+// Frame: 'x' + 3 x float32 + '\n'. A frame is only accepted when both the
+// header and the terminator line up; otherwise slide one byte and resync, so
+// line noise or a dropped byte never commits corrupted values.
+const uint8_t FRAME_LEN = 14;
+uint8_t rxBuf[FRAME_LEN];
+uint8_t rxLen = 0;
+
 void getFloat(){
-    while (Serial.available()>13){
-      int cont = 0;
-      FLOATUNION_t f;
-      char header;
-      header = (char)Serial.read();
-      if (header =='x'){
-        while (cont < 4 ){
-          myValue1.bytes[cont] = Serial.read() ;
-          cont = cont +1;
+    while (Serial.available() > 0){
+      uint8_t b = (uint8_t)Serial.read();
+      if (rxLen == 0 && b != 'x') continue;
+      rxBuf[rxLen++] = b;
+      if (rxLen < FRAME_LEN) continue;
+      if (rxBuf[FRAME_LEN - 1] == '\n'){
+        for (int i = 0; i < 4; i++){
+          myValue1.bytes[i] = rxBuf[1 + i];
+          myValue2.bytes[i] = rxBuf[5 + i];
+          myValue3.bytes[i] = rxBuf[9 + i];
         }
-        cont = 0;
-        while (cont < 4 ){
-          myValue2.bytes[cont] = Serial.read() ;
-          cont = cont +1;
-        }
-        cont = 0;
-        while (cont < 4 ){
-          myValue3.bytes[cont] = Serial.read() ;
-          cont = cont +1;
-        }
-        char terminator = (char)Serial.read();
+        rxLen = 0;
+      } else {
+        // drop the false header, restart from the next 'x' in the window
+        uint8_t j = 1;
+        while (j < FRAME_LEN && rxBuf[j] != 'x') j++;
+        rxLen = FRAME_LEN - j;
+        memmove(rxBuf, rxBuf + j, rxLen);
       }
     }
 }
